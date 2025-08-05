@@ -9,6 +9,7 @@ import (
 	"os"
 	"path"
 	"regexp"
+	"sync"
 
 	"github.com/CREDOProject/go-apt-client"
 	goosinfo "github.com/CREDOProject/go-osinfo"
@@ -17,6 +18,8 @@ import (
 )
 
 const aptModuleName = "apt"
+
+var aptMutex sync.Mutex
 
 const aptModuleShort = "Retrieves an apt package and its dependencies."
 
@@ -160,10 +163,14 @@ func (*aptModule) bareRun(s aptSpell) (aptSpell, error) {
 	aptPack := &apt.Package{
 		Name: s.Name,
 	}
+
+	aptMutex.Lock()
 	_, err := apt.CheckForUpdates()
 	if err != nil {
 		return aptSpell{}, fmt.Errorf("While running: %s, failed to check for updates: %w", s.Name, err)
 	}
+	aptMutex.Unlock()
+
 	output, err := apt.InstallDry(aptPack)
 	logger.Get().Print(string(output))
 	if err != nil {
