@@ -2,6 +2,9 @@ package modules
 
 import (
 	"fmt"
+	"io"
+	"net/http"
+	"os"
 
 	"github.com/spf13/cobra"
 )
@@ -32,6 +35,31 @@ func (u *urlModule) Apply(any) error {
 // BulkApply implements Module.
 func (u *urlModule) BulkApply(config *Config) error {
 	panic("unimplemented")
+}
+
+func downloadFile(url string, outputPath string) error {
+	out, err := os.Create(outputPath)
+	if err != nil {
+		return fmt.Errorf("failed to create file: %w", err)
+	}
+	defer out.Close()
+
+	resp, err := http.Get(url)
+	if err != nil {
+		return fmt.Errorf("failed to download file: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("failed to download file: received status code %d", resp.StatusCode)
+	}
+
+	_, err = io.Copy(out, resp.Body)
+	if err != nil {
+		return fmt.Errorf("failed to save file: %w", err)
+	}
+
+	return nil
 }
 
 // BulkSave implements Module.
