@@ -1,6 +1,10 @@
 package modules
 
-import "github.com/spf13/cobra"
+import (
+	"fmt"
+
+	"github.com/spf13/cobra"
+)
 
 const urlModuleName = "url"
 
@@ -35,9 +39,31 @@ func (u *urlModule) BulkSave(config *Config) error {
 	panic("unimplemented")
 }
 
+func (u *urlModule) cobraArgs() func(*cobra.Command, []string) error {
+	return func(cmd *cobra.Command, args []string) error {
+		if len(args) < 1 {
+			return fmt.Errorf("%s module requires at least one argument: the URL to download", urlModuleName)
+		}
+		return nil
+	}
+}
+
+func (u *urlModule) cobraRun(config *Config) func(*cobra.Command, []string) {
+	return func(cmd *cobra.Command, args []string) {
+		// Placeholder for actual implementation
+		fmt.Printf("Downloading from URL: %s\n", args[0])
+	}
+}
+
 // CliConfig implements Module.
 func (u *urlModule) CliConfig(config *Config) *cobra.Command {
-	panic("unimplemented")
+	return &cobra.Command{
+		Args:    u.cobraArgs(),
+		Example: urlModuleExample,
+		Run:     u.cobraRun(config),
+		Short:   urlModuleShort,
+		Use:     urlModuleName,
+	}
 }
 
 // Commit implements Module.
