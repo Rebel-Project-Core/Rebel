@@ -11,7 +11,7 @@ ARG VERSION
 ARG COMMIT
 ARG DATE
 
-RUN CGO_ENABLED=0 go build -ldflags "-s -w -X 'github.com/Rebel-Project-Core/Rebel/version.Version=${VERSION}' -X 'github.com/Rebel-Project-Core/Rebel/version.Commit=${COMMIT}' -X 'github.com/Rebel-Project-Core/Rebel/version.BuildDate=${DATE}'" -o /usr/bin/credo .
+RUN CGO_ENABLED=0 go build -ldflags "-s -w -X 'credo/version.Version=${VERSION}' -X 'credo/version.Commit=${COMMIT}' -X 'credo/version.BuildDate=${DATE}'" -o /usr/bin/credo .
 
 FROM ubuntu:24.04 AS final
 
