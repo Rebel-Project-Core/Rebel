@@ -52,6 +52,7 @@ jobs:
           tags: |
             type=semver,pattern=v{{version}}
             type=raw,value=latest
+            type=sha
           flavor: |
             suffix=-${{ matrix.architecture }}
 
@@ -94,6 +95,7 @@ jobs:
           tags: |
             type=semver,pattern=v{{version}}
             type=raw,value=latest
+            type=sha
 
       - name: Create manifest list and push
         run: |
