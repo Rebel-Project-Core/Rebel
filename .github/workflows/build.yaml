@@ -24,10 +24,15 @@ jobs:
         with:
           check-latest: true
       - name: Debug Git Information
+        id: vars
         run: |
           git rev-parse --short HEAD
           git describe --tags --exact-match || echo "No exact tag"
           git status
+          echo "commit=$(git rev-parse HEAD)" >> $GITHUB_OUTPUT
+          echo "date=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> $GITHUB_OUTPUT
+          echo "version=$(git describe --tags --always)" >> $GITHUB_OUTPUT
+
       - name: Test
         run: |
           make test
@@ -70,6 +75,10 @@ jobs:
           context: .
           platforms: linux/${{ matrix.architecture }}
           push: true
+          build-args: |
+            VERSION=${{ steps.vars.outputs.version }}
+            COMMIT=${{ steps.vars.outputs.commit }}
+            DATE=${{ steps.vars.outputs.date }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
         if: matrix.platform == 'linux'
