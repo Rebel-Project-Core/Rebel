@@ -48,7 +48,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/credoproject/core
+          images: ghcr.io/${{ github.repository }}
           tags: |
             type=semver,pattern=v{{version}}
             type=raw,value=latest
@@ -90,7 +90,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/credoproject/core
+          images: ghcr.io/${{ github.repository }}
           tags: |
             type=semver,pattern=v{{version}}
             type=raw,value=latest
