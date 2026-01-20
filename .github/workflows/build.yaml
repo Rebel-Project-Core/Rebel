@@ -3,6 +3,7 @@ on:
   push:
     branches: [main]
   release:
+
 jobs:
   build:
     strategy:
@@ -35,6 +36,7 @@ jobs:
           GOOS=${{ matrix.platform }} GOARCH=${{ matrix.architecture }} make
 
       - name: Log in to GitHub Container Registry
+        if: matrix.platform == 'linux'
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
@@ -42,22 +44,23 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Extract metadata for Docker
+        if: matrix.platform == 'linux'
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/credoproject/credo
+          images: ghcr.io/credoproject/core
           tags: |
             type=semver,pattern=v{{version}}
             type=raw,value=latest
+          flavor: |
+            suffix=-${{ matrix.architecture }}
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v5
         with:
           context: .
           push: true
-          tags: |
-            ghcr.io/credoproject/core:latest-${{ matrix.architecture }}
-            ghcr.io/credoproject/core:${{ steps.meta.outputs.version }}-${{ matrix.architecture }}
+          tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
         if: matrix.platform == 'linux'
 
@@ -70,3 +73,34 @@ jobs:
         with:
           files: |
             *_credo.zip
+
+  merge:
+    runs-on: ubuntu-latest
+    needs: build
+    if: github.event_name != 'pull_request'
+    steps:
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata for Docker
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/credoproject/core
+          tags: |
+            type=semver,pattern=v{{version}}
+            type=raw,value=latest
+
+      - name: Create manifest list and push
+        run: |
+          TAGS="${{ steps.meta.outputs.tags }}"
+          for tag in $TAGS; do
+            echo "Creating manifest for $tag"
+            docker buildx imagetools create -t "$tag" \
+              "${tag}-amd64" \
+              "${tag}-arm64"
+          done
