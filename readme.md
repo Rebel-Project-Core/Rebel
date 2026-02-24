@@ -1,4 +1,4 @@
-# CREDO Core
+# Rebel Core
 
 Customizable, Reproducible, Dockerfile Generator for Bioinformatics Applications.
 
