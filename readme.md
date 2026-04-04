@@ -4,4 +4,4 @@ Customizable, Reproducible, Dockerfile Generator for Bioinformatics Applications
 
 ---
 
-User documentation: https://credoproject.github.io/docs/
+User documentation: https://rebel-project-core.github.io/docs/
