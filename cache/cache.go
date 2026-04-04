@@ -11,8 +11,9 @@ var (
 	ErrAlreadyCached = errors.New("Already Cached.")
 )
 
-var writeMutex sync.Mutex
-var readMutex sync.Mutex
+// mu guards all access to cache. A single RWMutex lets concurrent Retrieve
+// calls proceed in parallel while serialising any Insert.
+var mu sync.RWMutex
 
 // Inserts a spell into the cache.
 // Needs a module, a name and the spell to insert.
@@ -20,10 +21,12 @@ var readMutex sync.Mutex
 // Returns an error when it's already cached. You can ignore by checking
 // ErrAlreadyCached.
 func Insert(module string, name string, spell any) error {
-	writeMutex.Lock()
-	defer writeMutex.Unlock()
-	if Retrieve(module, name) != nil {
-		return ErrAlreadyCached
+	mu.Lock()
+	defer mu.Unlock()
+	if cache[module] != nil {
+		if _, present := cache[module][name]; present {
+			return ErrAlreadyCached
+		}
 	}
 	if cache[module] == nil {
 		cache[module] = make(map[string]any)
@@ -35,8 +38,8 @@ func Insert(module string, name string, spell any) error {
 // Retrieves a spell from the cache, if it is present. Returns nil when the
 // module is not in the cache.
 func Retrieve(module string, name string) any {
-	readMutex.Lock()
-	defer readMutex.Unlock()
+	mu.RLock()
+	defer mu.RUnlock()
 	if cache[module] == nil {
 		return nil
 	}

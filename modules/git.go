@@ -84,7 +84,7 @@ func (m *gitModule) Save(anySpell any) error {
 		return ErrConverting
 	}
 
-	projectPath, err := project.ProjectPath()
+	projectPathStr, err := project.ProjectPath()
 	if err != nil {
 		return err
 	}
@@ -103,7 +103,7 @@ func (m *gitModule) Save(anySpell any) error {
 		cloneOptions.ReferenceName = plumbing.ReferenceName("refs/tags/" + spell.Version)
 	}
 
-	_, err = git.PlainClone(path.Join(*projectPath, gitModuleName, joinedPath), false, cloneOptions)
+	_, err = git.PlainClone(path.Join(projectPathStr, gitModuleName, joinedPath), false, cloneOptions)
 	return err
 }
 

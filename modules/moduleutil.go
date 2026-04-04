@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path"
+	"reflect"
 
 	"github.com/CREDOProject/sharedutils/types"
 	"github.com/spf13/cobra"
@@ -19,7 +20,7 @@ func moduleDownloadPath(moduleName string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	dir := path.Join(*p, moduleName)
+	dir := path.Join(p, moduleName)
 	if err := os.MkdirAll(dir, DirectoryPermissions); err != nil {
 		return "", err
 	}
@@ -39,6 +40,11 @@ func retrieveFromCache[T any](moduleName, key string) (*T, bool) {
 		return nil, false
 	}
 	return v, true
+}
+
+// externalDependenciesEqual reports whether two Config values are identical.
+func externalDependenciesEqual(a, b Config) bool {
+	return reflect.DeepEqual(a, b)
 }
 
 // minArgsValidator returns a cobra args validator that requires at least one

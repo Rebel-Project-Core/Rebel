@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"os"
 	"path"
-	"strings"
 
 	gopip "github.com/CREDOProject/go-pip"
 	"github.com/CREDOProject/go-pip/utils"
@@ -15,6 +14,7 @@ import (
 	"github.com/CREDOProject/sharedutils/types"
 	"github.com/spf13/cobra"
 )
+
 
 const pipModuleName = "pip"
 
@@ -83,7 +83,7 @@ func (s pipSpell) equals(t equatable) bool {
 	if err != nil {
 		return false
 	}
-	return strings.Compare(s.Name, o.Name) == 0
+	return s.Name == o.Name
 
 }
 
@@ -115,7 +115,7 @@ func getPipBinary() (*string, error) {
 		return nil, fmt.Errorf("getPipBinary, obtaining project path: %v", err)
 	}
 
-	venvPath, err := setupPythonVenv(path.Join(*projectPath, PipVenvDirectoryName))
+	venvPath, err := setupPythonVenv(path.Join(projectPath, PipVenvDirectoryName))
 	if err != nil {
 		return nil, fmt.Errorf("getPipBinary, setting up venv: %v", err)
 	}

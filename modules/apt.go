@@ -136,11 +136,11 @@ func (*aptModule) bareRun(s aptSpell) (aptSpell, error) {
 	}
 
 	aptMutex.Lock()
+	defer aptMutex.Unlock()
 	_, err := apt.CheckForUpdates()
 	if err != nil {
 		return aptSpell{}, fmt.Errorf("While running: %s, failed to check for updates: %w", s.Name, err)
 	}
-	aptMutex.Unlock()
 
 	output, err := apt.InstallDry(aptPack)
 	logger.Get().Print(string(output))

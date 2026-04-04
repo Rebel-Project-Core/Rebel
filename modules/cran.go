@@ -230,11 +230,11 @@ func listDownloadedFilesInMap(destdir string) (map[string]struct{}, error) {
 }
 
 func (c *cranModule) libraryDirectory() (string, error) {
-	project, err := project.ProjectPath()
+	projectPath, err := project.ProjectPath()
 	if err != nil {
 		return "", err
 	}
-	directory := path.Join(*project, CranLibraryDirectoryName)
+	directory := path.Join(projectPath, CranLibraryDirectoryName)
 	err = os.MkdirAll(directory, DirectoryPermissions)
 	if err != nil {
 		return "", err
@@ -356,7 +356,11 @@ func (c *cranModule) bareRunSingle(s cranSpell) (*cranSpell, error) {
 		module, ok := Modules[d.PackageManager]
 		if ok {
 			args := []string{d.Name}
-			module().CliConfig(&finalSpell.ExternalDependencies).Run(nil, args)
+			cmd := module().CliConfig(&finalSpell.ExternalDependencies)
+			cmd.SetArgs(args)
+			if err := cmd.Execute(); err != nil {
+				return nil, fmt.Errorf("[cran] external dep %s/%s: %w", d.PackageManager, d.Name, err)
+			}
 		}
 	}
 	_ = cache.Insert(cranCacheKeyBare, s.PackageName, finalSpell)
@@ -402,7 +406,13 @@ func (c *cranModule) getDependencies(rscriptBin string, s cranSpell) ([]cranSpel
 		wg.Add(1)
 		MaxWorkers <- 1
 		go func(dep string) {
-			defer func() { wg.Done(); <-MaxWorkers }()
+			defer func() {
+				if r := recover(); r != nil {
+					logger.Get().Printf("[cran] panic resolving dependency %s: %v", dep, r)
+				}
+				wg.Done()
+				<-MaxWorkers
+			}()
 			dependencySpell, err := c.bareRunSingle(cranSpell{
 				PackageName:  dep,
 				Repository:   s.Repository,
@@ -462,20 +472,25 @@ func (c *cranModule) installBioConductor(cfg *Config) error {
 
 // equals checks if two cranSpell objects are equal.
 func (c cranSpell) equals(t equatable) bool {
-	// TODO: implement equality check.
 	s, err := types.To[cranSpell](t)
 	if err != nil {
 		return false
 	}
-	equality := len(s.Dependencies) == len(c.Dependencies)
-	if !equality {
+	if s.PackageName != c.PackageName ||
+		s.PackagePath != c.PackagePath ||
+		s.BioConductor != c.BioConductor {
+		return false
+	}
+	if len(s.Dependencies) != len(c.Dependencies) {
 		return false
 	}
 	for i := range s.Dependencies {
-		equality = equality &&
-			s.Dependencies[i].equals(c.Dependencies[i])
+		if !s.Dependencies[i].equals(c.Dependencies[i]) {
+			return false
+		}
 	}
-	return equality && strings.Compare(s.PackageName, c.PackageName) == 0 &&
-		strings.Compare(s.PackagePath, c.PackagePath) == 0 &&
-		s.BioConductor == c.BioConductor
+	if !externalDependenciesEqual(s.ExternalDependencies, c.ExternalDependencies) {
+		return false
+	}
+	return true
 }

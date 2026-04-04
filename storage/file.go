@@ -2,7 +2,9 @@ package storage
 
 import (
 	"credo/logger"
+	"fmt"
 	"os"
+	"path/filepath"
 )
 
 const defaultContent = `# !!! WARNING !!!
@@ -16,25 +18,33 @@ type FileStorage struct {
 }
 
 func (s *FileStorage) Write(data []byte) {
-	// Checks if file exists
-	_, err := os.Stat(s.Filename)
-	if os.IsNotExist(err) {
-		file, err := os.Create(s.Filename)
-		if err != nil {
-			logger.Get().Fatal(err)
-		}
-		_, err = file.WriteString(defaultContent)
-		file.Close()
-		if err != nil {
-			logger.Get().Fatal(err)
-		}
-	}
-
 	content := []byte(defaultContent)
 	content = append(content, data...)
 
-	if err := os.WriteFile(s.Filename, content, 0644); err != nil {
-		logger.Get().Fatal(err)
+	dir := filepath.Dir(s.Filename)
+	tmp, err := os.CreateTemp(dir, ".credospell-*.tmp")
+	if err != nil {
+		logger.Get().Fatal(fmt.Errorf("storage: create temp file: %w", err))
+	}
+	tmpName := tmp.Name()
+
+	if _, err := tmp.Write(content); err != nil {
+		tmp.Close()
+		os.Remove(tmpName)
+		logger.Get().Fatal(fmt.Errorf("storage: write temp file: %w", err))
+	}
+	if err := tmp.Chmod(0600); err != nil {
+		tmp.Close()
+		os.Remove(tmpName)
+		logger.Get().Fatal(fmt.Errorf("storage: chmod temp file: %w", err))
+	}
+	if err := tmp.Close(); err != nil {
+		os.Remove(tmpName)
+		logger.Get().Fatal(fmt.Errorf("storage: close temp file: %w", err))
+	}
+	if err := os.Rename(tmpName, s.Filename); err != nil {
+		os.Remove(tmpName)
+		logger.Get().Fatal(fmt.Errorf("storage: rename temp file: %w", err))
 	}
 }
 

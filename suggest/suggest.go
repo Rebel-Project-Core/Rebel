@@ -1,6 +1,11 @@
 package suggest
 
-import "fmt"
+import (
+	"fmt"
+	"sync"
+)
+
+var mu sync.RWMutex
 
 // Represents the internal list of suggestions.
 var suggestions Suggestions = []Suggestion{}
@@ -18,11 +23,15 @@ type Suggestion struct {
 
 // Register adds a new suggestion to the internal list of suggestions.
 func Register(suggest Suggestion) {
+	mu.Lock()
+	defer mu.Unlock()
 	suggestions = append(suggestions, suggest)
 }
 
 // Get returns the internal list of all registered suggestions.
 func Get() Suggestions {
+	mu.RLock()
+	defer mu.RUnlock()
 	return suggestions
 }
 
@@ -46,4 +55,8 @@ func (suggestions Suggestions) String() (output string) {
 }
 
 // HasSuggestion checks if there are any registered suggestions.
-func HasSuggestion() bool { return len(suggestions) > 0 }
+func HasSuggestion() bool {
+	mu.RLock()
+	defer mu.RUnlock()
+	return len(suggestions) > 0
+}
