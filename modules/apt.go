@@ -3,11 +3,8 @@ package modules
 import (
 	"credo/cache"
 	"credo/logger"
-	"credo/project"
 	"credo/suggest"
 	"fmt"
-	"os"
-	"path"
 	"regexp"
 	"sync"
 
@@ -62,15 +59,7 @@ type aptSpell struct {
 	ExternalDependencies Config     `yaml:"external_dependencies,omitempty"`
 }
 
-// Function used to check if two aptSpell objects are equal.
-// It takes in an equatable interface as a parameter and returns a boolean
-// value indicating whether the two objects are equal or not.
-// The function first checks if the input parameter t is of type aptSpell.
-//
-// If it is, it proceeds to compare the Name and Optional of the two
-// objects and all its other Dependencies.
-// The function returns true if the two objects are equal.
-// Otherwise, it returns false.
+// equals returns true if a and t have the same Name, Optional flag, and Dependencies.
 func (a aptSpell) equals(t equatable) bool {
 	o, err := types.To[aptSpell](t)
 	if err != nil {
@@ -110,26 +99,11 @@ func (m *aptModule) BulkSave(config *Config) error {
 // CliConfig implements Module.
 func (m *aptModule) CliConfig(config *Config) *cobra.Command {
 	return &cobra.Command{
-		Args:    m.cobraArgs(),
+		Args:    minArgsValidator(aptModuleName),
 		Example: aptModuleExample,
 		Run:     m.cobraRun(config),
 		Short:   aptModuleShort,
 		Use:     aptModuleName,
-	}
-}
-
-// Function used to validate the arguments passed to the apt command.
-// If no arguments are passed, it returns an error.
-// Otherwise it returns nil.
-//
-// Intended to be used by cobra.
-func (m *aptModule) cobraArgs() func(*cobra.Command, []string) error {
-	return func(cmd *cobra.Command, args []string) error {
-		if len(args) < 1 {
-			return fmt.Errorf("%s module requires at least one argument.",
-				aptModuleName)
-		}
-		return nil
 	}
 }
 
@@ -154,11 +128,8 @@ func (m *aptModule) cobraRun(config *Config) func(*cobra.Command, []string) {
 }
 
 func (*aptModule) bareRun(s aptSpell) (aptSpell, error) {
-	if spell := cache.Retrieve(aptModuleName, s.Name); spell != nil {
-		newSpell, err := types.To[aptSpell](s)
-		if err == nil {
-			return *newSpell, nil
-		}
+	if spell, ok := retrieveFromCache[aptSpell](aptModuleName, s.Name); ok {
+		return *spell, nil
 	}
 	aptPack := &apt.Package{
 		Name: s.Name,
@@ -198,7 +169,7 @@ func (*aptModule) bareRun(s aptSpell) (aptSpell, error) {
 			Optional: isOptional,
 		})
 	}
-	_ = cache.Insert(pipModuleName, s.Name, s)
+	_ = cache.Insert(aptModuleName, s.Name, s)
 	return s, nil
 }
 
@@ -224,12 +195,10 @@ func (*aptModule) Save(anySpell any) error {
 	if cache.Retrieve(aptModuleName, spell.Name) != nil {
 		return nil
 	}
-	project, err := project.ProjectPath()
+	downloadPath, err := moduleDownloadPath(aptModuleName)
 	if err != nil {
 		return err
 	}
-	downloadPath := path.Join(*project, aptModuleName)
-	os.MkdirAll(downloadPath, 0755)
 	aptPack := &apt.Package{
 		Name: spell.Name,
 	}
@@ -247,11 +216,10 @@ func (m *aptModule) Apply(anySpell any) error {
 	if err != nil {
 		return ErrConverting
 	}
-	project, err := project.ProjectPath()
+	downloadPath, err := moduleDownloadPath(aptModuleName)
 	if err != nil {
 		return err
 	}
-	downloadPath := path.Join(*project, aptModuleName)
 	aptPack := &apt.Package{
 		Name: spell.Name,
 	}

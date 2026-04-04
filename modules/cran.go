@@ -58,7 +58,7 @@ func (c *cranModule) Apply(anyspell any) error {
 	if err != nil {
 		return fmt.Errorf("%v", err)
 	}
-	if cache.Retrieve(cranModuleName+"apply", spell.PackageName) != nil {
+	if cache.Retrieve(cranCacheKeyApply, spell.PackageName) != nil {
 		return nil
 	}
 	err = DeepApply(&spell.ExternalDependencies)
@@ -97,7 +97,7 @@ func (c *cranModule) Apply(anyspell any) error {
 	script.Stderr = os.Stderr
 	err = script.Run()
 	if err == nil {
-		_ = cache.Insert(cranModuleName+"apply", spell.PackageName, true)
+		_ = cache.Insert(cranCacheKeyApply, spell.PackageName, true)
 	}
 	return err
 }
@@ -125,7 +125,7 @@ func (c *cranModule) BulkSave(config *Config) error {
 // CliConfig implements Module.
 func (c *cranModule) CliConfig(config *Config) *cobra.Command {
 	command := &cobra.Command{
-		Args:    c.cobraArgs(),
+		Args:    minArgsValidator(cranModuleName),
 		Example: cranModuleExample,
 		Run:     c.cobraRun(config),
 		Short:   cranModuleShort,
@@ -164,7 +164,7 @@ func (c *cranModule) Save(anyspell any) error {
 	if err != nil {
 		return fmt.Errorf("Error deepsaving cran: %v", err)
 	}
-	if cache.Retrieve(cranModuleName+"save", spell.PackageName) != nil {
+	if cache.Retrieve(cranCacheKeySave, spell.PackageName) != nil {
 		return nil
 	}
 	destdir, err := c.destinationDirectory()
@@ -203,22 +203,13 @@ func (c *cranModule) Save(anyspell any) error {
 	script.Stderr = os.Stderr
 	err = script.Run()
 	if err == nil {
-		_ = cache.Insert(cranModuleName+"save", spell.PackageName, true)
+		_ = cache.Insert(cranCacheKeySave, spell.PackageName, true)
 	}
 	return err
 }
 
 func (c *cranModule) destinationDirectory() (string, error) {
-	project, err := project.ProjectPath()
-	if err != nil {
-		return "", err
-	}
-	directory := path.Join(*project, cranModuleName)
-	err = os.MkdirAll(directory, 0755)
-	if err != nil {
-		return "", err
-	}
-	return directory, nil
+	return moduleDownloadPath(cranModuleName)
 }
 
 func listDownloadedFilesInMap(destdir string) (map[string]struct{}, error) {
@@ -243,25 +234,12 @@ func (c *cranModule) libraryDirectory() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	directory := path.Join(*project, "R-Library")
-	err = os.MkdirAll(directory, 0755)
+	directory := path.Join(*project, CranLibraryDirectoryName)
+	err = os.MkdirAll(directory, DirectoryPermissions)
 	if err != nil {
 		return "", err
 	}
 	return directory, nil
-}
-
-// cobraArgs is used to validate the arguments passed to the cran command.
-//
-// This function is intended to be used by cobra.
-func (c *cranModule) cobraArgs() func(*cobra.Command, []string) error {
-	return func(c *cobra.Command, args []string) error {
-		if len(args) < 1 {
-			return fmt.Errorf("%s module requires at least one argument.",
-				cranModuleName)
-		}
-		return nil
-	}
 }
 
 // cobraRun is used to run the module from the command line.
@@ -281,38 +259,17 @@ func (c *cranModule) cobraRun(cfg *Config) func(*cobra.Command, []string) {
 			BioConductor: isBioconductor,
 		}, cfg)
 		if err != nil {
-			logger.Get().Print(err)
-			return
+			logger.Get().Fatal(err)
 		}
 		err = c.Commit(cfg, spell)
-		if err != nil {
-			logger.Get().Print(err)
+		if err != nil && err != ErrAlreadyPresent {
+			logger.Get().Fatal(err)
 		}
 	}
 }
 
 func (c *cranModule) installApt(config *Config) error {
-	if _, ok := Modules["apt"]; !ok {
-		return nil
-	}
-	apt := aptModule{}
-	packages := []string{"r-base", "r-base-dev"}
-	for _, v := range packages {
-		spell, err := apt.bareRun(aptSpell{Name: v})
-		if err != nil {
-			return fmt.Errorf("InstallApt error barerun: %v", err)
-		}
-		if err = apt.Commit(config, spell); err != nil && err != ErrAlreadyPresent {
-			return fmt.Errorf("InstallApt error commiting: %v", err)
-		}
-		if err = apt.Save(spell); err != nil {
-			return fmt.Errorf("InstallApt error saving: %v", err)
-		}
-		if err = apt.Apply(spell); err != nil {
-			return fmt.Errorf("InstallApt error applying: %v", err)
-		}
-	}
-	return nil
+	return installAptPackages(config, CranAptDependencies)
 }
 
 func (c *cranModule) bareRun(s cranSpell, cfg *Config) (*cranSpell, error) {
@@ -327,14 +284,8 @@ func (c *cranModule) bareRun(s cranSpell, cfg *Config) (*cranSpell, error) {
 }
 
 func (c *cranModule) bareRunSingle(s cranSpell) (*cranSpell, error) {
-	if spell := cache.Retrieve(cranModuleName+"bare",
-		s.PackageName); spell != nil {
-		newSpell, err := types.To[cranSpell](spell)
-		if err != nil {
-			logger.Get().Printf(`[cran/bareRun]: %v`, err)
-		} else {
-			return newSpell, nil
-		}
+	if spell, ok := retrieveFromCache[cranSpell](cranCacheKeyBare, s.PackageName); ok {
+		return spell, nil
 	}
 	rscriptBin, err := gorscript.DetectRscriptBinary()
 	if err != nil {
@@ -408,7 +359,7 @@ func (c *cranModule) bareRunSingle(s cranSpell) (*cranSpell, error) {
 			module().CliConfig(&finalSpell.ExternalDependencies).Run(nil, args)
 		}
 	}
-	_ = cache.Insert(cranModuleName+"bare", s.PackageName, finalSpell)
+	_ = cache.Insert(cranCacheKeyBare, s.PackageName, finalSpell)
 	return &finalSpell, nil
 }
 
@@ -441,6 +392,7 @@ func (c *cranModule) getDependencies(rscriptBin string, s cranSpell) ([]cranSpel
 	outputString := buffer.String()
 	dependencyList := strings.Split(strings.Trim(outputString, "\n"), "\n")
 	deps := []cranSpell{}
+	var mu sync.Mutex
 	var MaxWorkers chan int = make(chan int, 4)
 	var wg sync.WaitGroup
 	for _, dep := range dependencyList {
@@ -451,7 +403,6 @@ func (c *cranModule) getDependencies(rscriptBin string, s cranSpell) ([]cranSpel
 		MaxWorkers <- 1
 		go func(dep string) {
 			defer func() { wg.Done(); <-MaxWorkers }()
-			fmt.Printf("Worker %s starting\n", dep)
 			dependencySpell, err := c.bareRunSingle(cranSpell{
 				PackageName:  dep,
 				Repository:   s.Repository,
@@ -460,9 +411,11 @@ func (c *cranModule) getDependencies(rscriptBin string, s cranSpell) ([]cranSpel
 			if err != nil || dependencySpell == nil {
 				return
 			}
+			mu.Lock()
 			if !Contains(deps, *dependencySpell) {
 				deps = append(deps, *dependencySpell)
 			}
+			mu.Unlock()
 		}(dep)
 	}
 	wg.Wait()
@@ -486,7 +439,7 @@ func (c *cranModule) downloadFunction(bioconductor bool) func(
 }
 
 func (c *cranModule) installBioConductor(cfg *Config) error {
-	cached := cache.Retrieve(cranModuleName+"bioc", "BiocManager")
+	cached := cache.Retrieve(cranCacheKeyBioc, "BiocManager")
 	if cached != nil {
 		return nil
 	}
@@ -503,7 +456,7 @@ func (c *cranModule) installBioConductor(cfg *Config) error {
 	if err = c.Apply(spell); err != nil {
 		return fmt.Errorf("Error applying, %v", err)
 	}
-	cache.Insert(cranModuleName+"bioc", "BiocManager", spell)
+	cache.Insert(cranCacheKeyBioc, "BiocManager", spell)
 	return nil
 }
 

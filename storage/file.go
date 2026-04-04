@@ -16,23 +16,15 @@ type FileStorage struct {
 }
 
 func (s *FileStorage) Write(data []byte) {
-	var file *os.File
-	defer file.Close()
-
 	// Checks if file exists
 	_, err := os.Stat(s.Filename)
 	if os.IsNotExist(err) {
-		file, err = os.Create(s.Filename)
+		file, err := os.Create(s.Filename)
 		if err != nil {
 			logger.Get().Fatal(err)
 		}
 		_, err = file.WriteString(defaultContent)
-		if err != nil {
-			logger.Get().Fatal(err)
-		}
-	} else {
-		// Opens the file if it already exists
-		file, err = os.Open(s.Filename)
+		file.Close()
 		if err != nil {
 			logger.Get().Fatal(err)
 		}
@@ -41,23 +33,18 @@ func (s *FileStorage) Write(data []byte) {
 	content := []byte(defaultContent)
 	content = append(content, data...)
 
-	os.WriteFile(s.Filename, content, os.ModeAppend)
-	if err != nil {
+	if err := os.WriteFile(s.Filename, content, 0644); err != nil {
 		logger.Get().Fatal(err)
 	}
 }
 
 func (s *FileStorage) Read() []byte {
-	var file *os.File
-	defer file.Close()
-
 	_, err := os.Stat(s.Filename)
 	if os.IsNotExist(err) {
 		s.Write([]byte(""))
 	}
 
 	data, err := os.ReadFile(s.Filename)
-
 	if err != nil {
 		logger.Get().Fatal(err)
 	}

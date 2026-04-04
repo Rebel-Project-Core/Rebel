@@ -40,15 +40,14 @@ func (m *pipModule) Apply(anySpell any) error {
 	if err != nil {
 		return fmt.Errorf("Error converting pip spell, %v", err)
 	}
-	project, err := project.ProjectPath()
-	if err != nil {
-		return err
-	}
 	pipBinary, err := getPipBinary()
 	if err != nil {
 		return err
 	}
-	downloadPath := path.Join(*project, pipModuleName)
+	downloadPath, err := moduleDownloadPath(pipModuleName)
+	if err != nil {
+		return err
+	}
 	cmd, err := gopip.New(*pipBinary).
 		Install(converted.Name).
 		FindLinks(downloadPath).
@@ -78,15 +77,7 @@ type pipSpell struct {
 	ExternalDependencies Config `yaml:"external_dependencies,omitempty"`
 }
 
-// Function used to check if two pipSpell objects are equal.
-// It takes in an equatable interface as a parameter and returns a boolean
-// value indicating whether the two objects are equal or not.
-// The function first checks if the input parameter t is of type pipSpell.
-//
-// If it is, it proceeds to compare the Name of the two
-// objects.
-// The function returns true if the two objects are equal.
-// Otherwise, it returns false.
+// equals returns true if s and t have the same Name.
 func (s pipSpell) equals(t equatable) bool {
 	o, err := types.To[pipSpell](t)
 	if err != nil {
@@ -124,7 +115,7 @@ func getPipBinary() (*string, error) {
 		return nil, fmt.Errorf("getPipBinary, obtaining project path: %v", err)
 	}
 
-	venvPath, err := setupPythonVenv(path.Join(*projectPath, "venv"))
+	venvPath, err := setupPythonVenv(path.Join(*projectPath, PipVenvDirectoryName))
 	if err != nil {
 		return nil, fmt.Errorf("getPipBinary, setting up venv: %v", err)
 	}
@@ -137,37 +128,12 @@ func getPipBinary() (*string, error) {
 }
 
 func (c *pipModule) installApt(config *Config) error {
-	if _, ok := Modules["apt"]; !ok {
-		return nil
-	}
-	apt := aptModule{}
-	packages := []string{"python3", "python3-pip", "python3-venv"}
-	for _, v := range packages {
-		spell, err := apt.bareRun(aptSpell{Name: v})
-		if err != nil {
-			return fmt.Errorf("InstallApt error barerun: %v", err)
-		}
-		if err = apt.Commit(config, spell); err != nil && err != ErrAlreadyPresent {
-			return fmt.Errorf("InstallApt error commiting: %v", err)
-		}
-		if err = apt.Save(spell); err != nil {
-			return fmt.Errorf("InstallApt error saving: %v", err)
-		}
-		if err = apt.Apply(spell); err != nil {
-			return fmt.Errorf("InstallApt error applying: %v", err)
-		}
-	}
-	return nil
+	return installAptPackages(config, PipAptDependencies)
 }
 
 func (m *pipModule) bareRun(p pipSpell) (pipSpell, error) {
-	if spell := cache.Retrieve(pipModuleName, p.Name); spell != nil {
-		newSpell, err := types.To[pipSpell](spell)
-		if err != nil {
-			logger.Get().Printf(`[pip/bareRun]: %v`, err)
-		} else {
-			return *newSpell, nil
-		}
+	if spell, ok := retrieveFromCache[pipSpell](pipModuleName, p.Name); ok {
+		return *spell, nil
 	}
 	pipBinary, err := getPipBinary()
 	if err != nil {
@@ -198,15 +164,14 @@ func (m *pipModule) Save(anySpell any) error {
 	if cache.Retrieve(pipModuleName, converted.Name) != nil {
 		return nil
 	}
-	project, err := project.ProjectPath()
-	if err != nil {
-		return err
-	}
 	pipBinary, err := getPipBinary()
 	if err != nil {
 		return err
 	}
-	downloadPath := path.Join(*project, pipModuleName)
+	downloadPath, err := moduleDownloadPath(pipModuleName)
+	if err != nil {
+		return err
+	}
 	cmd, err := gopip.New(*pipBinary).
 		Download(converted.Name, downloadPath).
 		Seal()
@@ -231,23 +196,7 @@ func (m *pipModule) BulkSave(config *Config) error {
 	return nil
 }
 
-// Function used to validate the arguments passed to the pip command.
-// If no arguments are passed, it returns an error.
-// Otherwise it returns nil.
-//
-// Intended to be used by cobra.
-func (m *pipModule) cobraArgs() func(*cobra.Command, []string) error {
-	return func(_ *cobra.Command, args []string) error {
-		if len(args) < 1 {
-			return fmt.Errorf("%s module requires at least one argument.",
-				pipModuleName)
-		}
-		return nil
-	}
-}
-
-// Function used to run the module from the command line.
-// It serves as an entry point to the bare run of the pipModule.
+// cobraRun serves as an entry point to the bare run of the pipModule.
 //
 // Intended to be used by cobra.
 func (m *pipModule) cobraRun(config *Config) func(*cobra.Command, []string) {
@@ -260,7 +209,7 @@ func (m *pipModule) cobraRun(config *Config) func(*cobra.Command, []string) {
 			logger.Get().Fatal(err)
 		}
 		err = m.Commit(config, spell)
-		if err != nil {
+		if err != nil && err != ErrAlreadyPresent {
 			logger.Get().Fatal(err)
 		}
 	}
@@ -269,7 +218,7 @@ func (m *pipModule) cobraRun(config *Config) func(*cobra.Command, []string) {
 // CliConfig implements Module.
 func (m *pipModule) CliConfig(config *Config) *cobra.Command {
 	return &cobra.Command{
-		Args:    m.cobraArgs(),
+		Args:    minArgsValidator(pipModuleName),
 		Example: pipModuleExample,
 		Run:     m.cobraRun(config),
 		Short:   pipModuleShort,

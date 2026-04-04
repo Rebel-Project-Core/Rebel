@@ -57,32 +57,25 @@ func (m *gitModule) Commit(config *Config, result any) error {
 }
 
 func (m *gitModule) bareRun(p gitSpell) (gitSpell, error) {
-	// Logic to get the latest version or the specified version.
 	version := p.Version
-	if len(version) == 0 {
-		version = "HEAD"
+
+	var ref plumbing.ReferenceName
+	if len(version) > 0 && version != "HEAD" {
+		ref = plumbing.ReferenceName("refs/tags/" + version)
 	}
 
-	// Setup a spell entry.
-	spell := gitSpell{
-		URL:     p.URL,
-		Version: version,
-	}
-
-	// Try Cloning
 	_, err := git.Clone(memory.NewStorage(), nil, &git.CloneOptions{
 		URL:               p.URL,
 		Depth:             1,
 		SingleBranch:      true,
 		RecurseSubmodules: 1,
-		ReferenceName:     plumbing.NewBranchReferenceName(version),
+		ReferenceName:     ref,
 	})
 
 	if err != nil {
-		return spell, err
+		return gitSpell{URL: p.URL, Version: version}, err
 	}
-
-	return spell, nil
+	return gitSpell{URL: p.URL, Version: version}, nil
 }
 
 func (m *gitModule) Save(anySpell any) error {
@@ -91,25 +84,27 @@ func (m *gitModule) Save(anySpell any) error {
 		return ErrConverting
 	}
 
-	// Obtain the project path
 	projectPath, err := project.ProjectPath()
 	if err != nil {
 		return err
 	}
+
 	_, _, _, repoPath := goisgiturl.FindScpLikeComponents(spell.URL)
 	joinedPath := path.Join(strings.Split(repoPath, "/")...)
-	// Try Clone
-	_, err = git.PlainClone(path.Join(*projectPath, gitModuleName, joinedPath), false, &git.CloneOptions{
+
+	cloneOptions := &git.CloneOptions{
 		URL:               spell.URL,
 		Depth:             1,
 		SingleBranch:      true,
 		RecurseSubmodules: git.DefaultSubmoduleRecursionDepth,
-		ReferenceName:     plumbing.NewBranchReferenceName(spell.Version),
-	})
-	if err != nil {
-		return err
 	}
-	return nil
+
+	if len(spell.Version) > 0 && spell.Version != "HEAD" {
+		cloneOptions.ReferenceName = plumbing.ReferenceName("refs/tags/" + spell.Version)
+	}
+
+	_, err = git.PlainClone(path.Join(*projectPath, gitModuleName, joinedPath), false, cloneOptions)
+	return err
 }
 
 func (m *gitModule) BulkSave(config *Config) error {
@@ -129,15 +124,7 @@ type gitSpell struct {
 	ExternalDependencies Config `yaml:"external_dependencies,omitempty"`
 }
 
-// Function used to check if two aptSpell objects are equal.
-// It takes in an equatable interface as a parameter and returns a boolean
-// value indicating whether the two objects are equal or not.
-// The function first checks if the input parameter t is of type gitSpell.
-//
-// If it is, it proceeds to compare the URL and Version of the two
-// objects.
-// The function returns true if the two objects are equal.
-// Otherwise, it returns false.
+// equals returns true if s and t have the same URL and Version.
 func (s gitSpell) equals(t equatable) bool {
 	o, err := types.To[gitSpell](t)
 	if err != nil {
@@ -165,7 +152,7 @@ func (m *gitModule) cobraRun(config *Config) func(*cobra.Command, []string) {
 			logger.Get().Fatal(err)
 		}
 		err = m.Commit(config, spell)
-		if err != nil {
+		if err != nil && err != ErrAlreadyPresent {
 			logger.Get().Fatal(err)
 		}
 	}

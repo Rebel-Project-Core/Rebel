@@ -3,10 +3,8 @@ package modules
 import (
 	"credo/cache"
 	"credo/logger"
-	"credo/project"
 	"fmt"
 	"os"
-	"path"
 	"strings"
 
 	goconda "github.com/CREDOProject/go-conda"
@@ -49,17 +47,7 @@ type condaSpell struct {
 	ExternalDependencies Config `yaml:"external_dependencies,omitempty"`
 }
 
-// Function used to check if two condaSpell objects are equal.
-// It takes in an equatable interface as a parameter and returns a boolean
-// value indicating whether the two objects are equal or not.
-// The function first checks if the input parameter t is of type condaSpell.
-//
-// If it is, it proceeds to compare the Name and Channel of the two
-// objects. The function returns true if the two objects are equal.
-// Otherwise, it returns false.
-//
-// This function is useful for comparing two condaSpell objects to determine if
-// they represent the same configuration or not.
+// equals returns true if c and t have the same Name and Channel.
 func (c condaSpell) equals(t equatable) bool {
 	o, err := types.To[condaSpell](t)
 	if err != nil {
@@ -100,21 +88,6 @@ func (c *condaModule) cobraRun(config *Config) func(*cobra.Command, []string) {
 	}
 }
 
-// Function used to validate the arguments passed to the conda command.
-// If no arguments are passed, it returns an error.
-// Otherwise it returns nil.
-//
-// Intended to be used by cobra.
-func (m *condaModule) cobraArgs() func(*cobra.Command, []string) error {
-	return func(cmd *cobra.Command, args []string) error {
-		if len(args) < 1 {
-			return fmt.Errorf("%s module requires at least one argument.",
-				condaModuleName)
-		}
-		return nil
-	}
-}
-
 // CliConfig implements Module.
 func (c *condaModule) CliConfig(config *Config) *cobra.Command {
 	command := &cobra.Command{
@@ -122,7 +95,7 @@ func (c *condaModule) CliConfig(config *Config) *cobra.Command {
 		Example: condaModuleExample,
 		Use:     condaModuleName,
 		Run:     c.cobraRun(config),
-		Args:    c.cobraArgs(),
+		Args:    minArgsValidator(condaModuleName),
 	}
 	command.PersistentFlags().String("channel", "", "Conda channel to use.")
 	return command
@@ -142,17 +115,12 @@ func (c *condaModule) Commit(config *Config, result any) error {
 }
 
 func (c *condaModule) bareRun(p condaSpell) (condaSpell, error) {
-	if spell := cache.Retrieve(condaModuleName, p.Name); spell != nil {
-		newSpell, err := types.To[condaSpell](spell)
-		if err != nil {
-			logger.Get().Printf(`[conda/bareRun]: %v`, err)
-		} else {
-			return *newSpell, nil
-		}
+	if spell, ok := retrieveFromCache[condaSpell](condaModuleName, p.Name); ok {
+		return *spell, nil
 	}
 	condaBinary, err := condautils.DetectCondaBinary()
 	if err != nil {
-		return condaSpell{}, nil
+		return condaSpell{}, fmt.Errorf("conda binary not found: %v", err)
 	}
 	cmd, err := goconda.New(condaBinary, "", "").
 		Install(&goconda.PackageInfo{
@@ -180,15 +148,14 @@ func (c *condaModule) Save(anySpell any) error {
 	if cache.Retrieve(condaModuleName, spell.Name) != nil {
 		return nil
 	}
-	project, err := project.ProjectPath()
-	if err != nil {
-		return err
-	}
 	condaBinary, err := condautils.DetectCondaBinary()
 	if err != nil {
 		return err
 	}
-	downloadPath := path.Join(*project, condaModuleName)
+	downloadPath, err := moduleDownloadPath(condaModuleName)
+	if err != nil {
+		return err
+	}
 	cmd, err := goconda.
 		New(condaBinary, downloadPath, downloadPath).
 		Download(&goconda.PackageInfo{
@@ -200,7 +167,7 @@ func (c *condaModule) Save(anySpell any) error {
 		Output: os.Stdout,
 	})
 	if err == nil {
-		_ = cache.Insert(aptModuleName, spell.Name, true)
+		_ = cache.Insert(condaModuleName, spell.Name, true)
 	}
 	return err
 }

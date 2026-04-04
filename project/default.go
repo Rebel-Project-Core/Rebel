@@ -5,6 +5,9 @@ import (
 	"path"
 )
 
+// ProjectDirectoryName is the name of the local project directory.
+const ProjectDirectoryName = "credoenv"
+
 // Global project path.
 var gPath *string
 
@@ -17,7 +20,7 @@ func ProjectPath() (*string, error) {
 	if err != nil {
 		return nil, err
 	}
-	projectPath := path.Join(basePath, "credoenv")
+	projectPath := path.Join(basePath, ProjectDirectoryName)
 
 	// Create project path.
 	err = os.MkdirAll(projectPath, 0755)
