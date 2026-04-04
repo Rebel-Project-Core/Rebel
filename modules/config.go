@@ -7,4 +7,5 @@ type Config struct {
 	Apt   []aptSpell   `yaml:"apt,omitempty"`
 	Conda []condaSpell `yaml:"conda,omitempty"`
 	Cran  []cranSpell  `yaml:"cran,omitempty"`
+	Url   []urlSpell   `yaml:"url,omitempty"`
 }
